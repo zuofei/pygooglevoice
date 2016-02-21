@@ -9,6 +9,8 @@ password=
 # Optional 2-step authentication key (as provided by Google)
 smsKey=
 
+cookiePath=~/.gvoice.cookies
+
 [gvoice]
 # Number to place calls from (eg, your google voice number)
 forwardingNumber=

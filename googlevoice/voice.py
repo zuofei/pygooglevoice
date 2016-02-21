@@ -1,7 +1,8 @@
-from conf import config
+from conf import Config
 from util import *
 import settings
 import base64
+import os
 
 qpat = re.compile(r'\?')
 
@@ -19,8 +20,13 @@ class Voice(object):
     Main voice instance for interacting with the Google Voice service
     Handles login/logout and most of the baser HTTP methods
     """
-    def __init__(self):
-        install_opener(build_opener(HTTPCookieProcessor(CookieJar())))
+    def __init__(self, configFile=None):
+        self.config = Config(configFile)
+        self.cookiejar = CookieJar()
+        if self.config.cookiePath and os.path.exists(self.config.cookiePath):
+            self.load_cookies()
+
+        install_opener(build_opener(HTTPCookieProcessor(self.cookiejar)))
 
         for name in settings.FEEDS:
             setattr(self, name, self.__get_xml_page(name))
@@ -60,45 +66,49 @@ class Voice(object):
             return self
 
         if email is None:
-            email = config.email
+            email = self.config.email
         if email is None:
             email = input('Email address: ')
 
         if passwd is None:
-            passwd = config.password
+            passwd = self.config.password
         if passwd is None:
             from getpass import getpass
             passwd = getpass()
 
-        content = self.__do_page('login').read()
-        # holy hackjob
-        galx = re.search(r"type=\"hidden\"\s+name=\"GALX\"\s+value=\"(.+)\"", content).group(1)
-        result = self.__do_page('login', {'Email': email, 'Passwd': passwd, 'GALX': galx})
-
-        if result.geturl().startswith(getattr(settings, "SMSAUTH")):
-            content = self.__smsAuth(smsKey)
-
-            try:
-                smsToken = re.search(r"name=\"smsToken\"\s+value=\"([^\"]+)\"", content).group(1)
-                galx = re.search(r"name=\"GALX\"\s+value=\"([^\"]+)\"", content).group(1)
-                content = self.__do_page('login', {'smsToken': smsToken, 'service': "grandcentral", 'GALX': galx})
-            except AttributeError:
-                raise LoginError
-
-            del smsKey, smsToken, galx
-
-        del email, passwd
-
         try:
             assert self.special
-        except (AssertionError, AttributeError):
-            raise LoginError
+        except:
+            content = self.__do_page('login').read()
+            # holy hackjob
+            galx = re.search(r"type=\"hidden\"\s+name=\"GALX\"\s+value=\"(.+)\"", content).group(1)
+            result = self.__do_page('login', {'Email': email, 'Passwd': passwd, 'GALX': galx})
+
+            if result.geturl().startswith(getattr(settings, "SMSAUTH")):
+                content = self.__smsAuth(smsKey)
+
+                try:
+                    smsToken = re.search(r"name=\"smsToken\"\s+value=\"([^\"]+)\"", content).group(1)
+                    galx = re.search(r"name=\"GALX\"\s+value=\"([^\"]+)\"", content).group(1)
+                    content = self.__do_page('login', {'smsToken': smsToken, 'service': "grandcentral", 'GALX': galx})
+                except AttributeError:
+                    raise LoginError
+
+                del smsKey, smsToken, galx
+
+            del email, passwd
+            self.save_cookies()
+
+            try:
+                assert self.special
+            except (AssertionError, AttributeError):
+                raise LoginError
 
         return self
 
     def __smsAuth(self, smsKey=None):
         if smsKey is None:
-            smsKey = config.smsKey
+            smsKey = self.config.smsKey
 
         if smsKey is None:
             from getpass import getpass
@@ -137,6 +147,8 @@ class Voice(object):
         self.__do_page('logout')
         del self._special
         assert self.special == None
+        if self.config.cookiePath and os.path.exists(self.config.cookiePath):
+            os.unlink(self.config.cookiePath)
         return self
 
     def call(self, outgoingNumber, forwardingNumber=None, phoneType=None, subscriberNumber=None):
@@ -145,9 +157,9 @@ class Voice(object):
         If you pass in your ``forwardingNumber``, please also pass in the correct ``phoneType``
         """
         if forwardingNumber is None:
-            forwardingNumber = config.forwardingNumber
+            forwardingNumber = self.config.forwardingNumber
         if phoneType is None:
-            phoneType = config.phoneType
+            phoneType = self.config.phoneType
 
         self.__validate_special_page('call', {
             'outgoingNumber': outgoingNumber,
@@ -321,3 +333,10 @@ class Voice(object):
         return self.__do_special_page(page, dict(data))
 
     _Message__messages_post = __messages_post
+
+    def save_cookies(self):
+        if self.config.cookiePath:
+            self.cookiejar.save(self.config.cookiePath, ignore_discard=True)
+
+    def load_cookies(self):
+        self.cookiejar.load(self.config.cookiePath, ignore_discard=True, ignore_expires=True)

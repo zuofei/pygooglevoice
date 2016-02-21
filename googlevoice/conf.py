@@ -8,8 +8,9 @@ class Config(ConfigParser):
     ``ConfigParser`` subclass that looks into your home folder for a file named
     ``.gvoice`` and parses configuration data from it.
     """
-    def __init__(self):
-        self.fname = os.path.expanduser('~/.gvoice')
+    def __init__(self, configFile=None):
+        if not configFile: configFile = '~/.gvoice'
+        self.fname = os.path.expanduser(configFile)
 
         if not os.path.exists(self.fname):
             try:
@@ -50,5 +51,5 @@ class Config(ConfigParser):
     password = property(lambda self: self.get('password', 'auth'))
     smsKey = property(lambda self: self.get('smsKey', 'auth'))
     secret = property(lambda self: self.get('secret'))
-
-config = Config()
+    cookiePath = property(lambda self: os.path.expanduser(self.get('cookiePath', 'auth')))
+#config = Config()
